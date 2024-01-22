@@ -370,7 +370,10 @@ patch_all_candidates_sdimg() {
     replace_definition \
         'CONFIG_ENV_IS_(NOWHERE|IN_[^ ]*)' \
         'CONFIG_ENV_IS_IN_MMC'
-
+    # Ossian: Need to have CONFIG_ENV_IS_NOWHERE defined for the UUU tool. 
+    #         Mender still works as designed with this config enabled.
+    add_definition \
+        'CONFIG_ENV_IS_NOWHERE'
     add_definition \
         'CONFIG_CMD_EXT4'
     add_definition \
