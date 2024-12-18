@@ -19,11 +19,6 @@ PACKAGES =+ "mender-auth mender-update mender-config mender-auth-dev"
 RDEPENDS:mender-auth += "mender-config"
 
 RDEPENDS:mender-update += "mender-auth mender-config"
-RRECOMMENDS:mender-update += "mender-flash"
-
-# rootfs-image module uses jq to parse the config file, but it is able to fall
-# back to line based parsing, which is less resilient.
-RRECOMMENDS:mender-update:append = "${@bb.utils.contains('PACKAGECONFIG', 'modules', ' jq', '', d)}"
 
 SYSTEMD_SERVICE:mender-update = "mender-updated.service"
 SYSTEMD_SERVICE:mender-auth = "mender-authd.service"
@@ -33,6 +28,7 @@ MENDER_CLIENT ?= "mender-updated"
 
 # Don't download the googletest source in Mender CMakefiles.txt
 EXTRA_OECMAKE:append = " -DMENDER_DOWNLOAD_GTEST=NO"
+EXTRA_OECMAKE:append = " -DSYSTEMD_UNIT_DIR=${systemd_system_unitdir}"
 
 inherit cmake
 
@@ -57,11 +53,11 @@ RDEPENDS:mender-update:append = "${@bb.utils.contains('PACKAGECONFIG', 'u-boot',
 PACKAGECONFIG[grub] = ",,,"
 RDEPENDS:mender-update:append = "${@bb.utils.contains('PACKAGECONFIG', 'grub', ' grub-editenv grub-mender-grubenv', '', d)}"
 
-# The docker module depends on bash, and of course on docker. However, docker is
-# a very large requirement, which we will not mandate. Bash however, we require,
-# because otherwise the Yocto QA checks will complain.
+# rootfs-image module uses jq to parse the config file and mender-flash to write into the inactive
+# partition, but can fall back to line based parsing (less resilient) and cat (less efficient).
 PACKAGECONFIG[modules] = ",,,"
-RDEPENDS:mender-update:append = "${@bb.utils.contains('PACKAGECONFIG', 'modules', ' bash', '', d)}"
+RRECOMMENDS:mender-update:append = "${@bb.utils.contains('PACKAGECONFIG', 'modules', ' jq', '', d)}"
+RRECOMMENDS:mender-update:append = "${@bb.utils.contains('PACKAGECONFIG', 'modules', ' mender-flash', '', d)}"
 
 PACKAGECONFIG[inventory-network-scripts] = ",,,"
 
@@ -83,8 +79,8 @@ SRC_URI:append:mender-image:mender-systemd = " \
 "
 
 SRC_URI:append:mender-persist-systemd-machine-id = " \
-    file://mender-systemd-machine-id.service \
-    file://mender-set-systemd-machine-id.sh \
+    file://mender-client-systemd-machine-id.service \
+    file://mender-client-set-systemd-machine-id.sh \
 "
 
 SRC_URI:append:mender-growfs-data:mender-systemd = " \
@@ -107,9 +103,9 @@ FILES:mender-update:append:mender-growfs-data:mender-systemd = " \
 "
 
 FILES:mender-update:append:mender-persist-systemd-machine-id = " \
-    ${systemd_unitdir}/system/mender-systemd-machine-id.service \
-    ${systemd_unitdir}/system/${MENDER_CLIENT}.service.wants/mender-systemd-machine-id.service \
-    ${bindir}/mender-set-systemd-machine-id.sh \
+    ${systemd_unitdir}/system/mender-client-systemd-machine-id.service \
+    ${systemd_unitdir}/system/${MENDER_CLIENT}.service.wants/mender-client-systemd-machine-id.service \
+    ${bindir}/mender-client-set-systemd-machine-id.sh \
 "
 
 FILES:mender-config += "\
@@ -127,6 +123,7 @@ FILES:mender-update += "\
     ${datadir}/mender/inventory/mender-inventory-network \
     ${datadir}/mender/inventory/mender-inventory-os \
     ${datadir}/mender/inventory/mender-inventory-rootfs-type \
+    ${sysconfdir}/mender/artifact-verify-key.pem \
     ${sysconfdir}/udev/mount.blacklist.d/mender \
 "
 FILES:mender-update:append = "${@bb.utils.contains('PACKAGECONFIG', 'modules', ' ${datadir}/mender/modules', '', d)}"
@@ -319,11 +316,11 @@ do_install:append:class-target:mender-growfs-data:mender-systemd() {
 }
 
 do_install:append:class-target:mender-persist-systemd-machine-id() {
-    install -m 644 ${WORKDIR}/mender-systemd-machine-id.service ${D}${systemd_unitdir}/system/
+    install -m 644 ${WORKDIR}/mender-client-systemd-machine-id.service ${D}${systemd_unitdir}/system/
     install -d -m 755 ${D}${systemd_unitdir}/system/${MENDER_CLIENT}.service.wants
-    ln -sf ../mender-systemd-machine-id.service ${D}${systemd_unitdir}/system/${MENDER_CLIENT}.service.wants/
+    ln -sf ../mender-client-systemd-machine-id.service ${D}${systemd_unitdir}/system/${MENDER_CLIENT}.service.wants/
     install -d -m 755 ${D}${bindir}
-    install -m 755 ${WORKDIR}/mender-set-systemd-machine-id.sh ${D}${bindir}/
+    install -m 755 ${WORKDIR}/mender-client-set-systemd-machine-id.sh ${D}${bindir}/
 }
 
 do_install() {

@@ -27,7 +27,6 @@ from utils.common import (
     get_bitbake_variables,
     run_verbose,
     signing_key,
-    versions_of_recipe,
     get_local_conf_path,
     get_local_conf_orig_path,
     make_tempdir,
@@ -59,6 +58,23 @@ def extract_partition(img, number, dstdir):
             "count=%d" % (end - start),
         ]
     )
+
+
+def versions_of_recipe(recipe_name, recipe_dir=None):
+    """Returns a list of all the versions we have of the given recipe, excluding
+    git recipes."""
+
+    if recipe_dir == None:
+        recipe_dir = recipe_name
+
+    versions = []
+    for entry in os.listdir("../../meta-mender-core/recipes-mender/%s/" % recipe_dir):
+        match = re.match(
+            r"^%s_([1-9][0-9]*\.[0-9]+\.[0-9]+[^.]*)\.bb" % recipe_name, entry
+        )
+        if match is not None:
+            versions.append(match.group(1))
+    return versions
 
 
 class TestBuild:
@@ -417,7 +433,20 @@ b524b8b3f13902ef8014c0af7aa408bc  ./usr/local/share/ca-certificates/mender/serve
     # e.g. latest.
     @pytest.mark.parametrize(
         "recipe,version",
-        [("mender-client", version) for version in versions_of_recipe("mender-client")]
+        [
+            ("mender", version)
+            for version in versions_of_recipe("mender", "mender-client")
+        ]
+        + [("mender", None)]
+        + [
+            ("mender-native", version)
+            for version in versions_of_recipe("mender", "mender-client")
+        ]
+        + [("mender-native", None)]
+        + [
+            ("mender-client", version)
+            for version in versions_of_recipe("mender-client")
+        ]
         + [("mender-client", None)]
         + [
             ("mender-client-native", version)
@@ -513,7 +542,10 @@ b524b8b3f13902ef8014c0af7aa408bc  ./usr/local/share/ca-certificates/mender/serve
         )
 
         output = run_verbose("mender-artifact read %s" % image, capture=True)
-        assert b"Compatible devices: '[machine1 machine2]'" in output
+        if version_is_minimum(bitbake_variables, "mender-artifact", "3.12.0"):
+            assert b"Compatible devices: [machine1, machine2]" in output
+        else:
+            assert b"Compatible devices: '[machine1 machine2]'" in output
 
         output = subprocess.check_output(
             "tar xOf %s header.tar.gz | tar xOz header-info" % image, shell=True
@@ -704,27 +736,39 @@ deployed-test-dir9/*;renamed-deployed-test-dir9/ \
         prepared_test_build,
         bitbake_path,
         bitbake_image,
-        mender_update_binary,
+        bitbake_variables,
     ):
         """Test that with PACKAGECONFIG "modules" switch in mender-client recipe the modules
         are installed in the root filesystem, and the built mender Artifact(s) contain them
         as "provides" keys."""
 
         # List of expected update modules
-        default_update_modules = [
-            "deb",
-            "directory",
-            "docker",
-            "rpm",
-            "script",
-            "single-file",
-        ]
-
-        if mender_update_binary == "mender":
-            default_update_modules.append("rootfs-image-v2")
+        if version_is_minimum(bitbake_variables, "mender", "4.1.0"):
+            default_update_modules = [
+                "directory",
+                "single-file",
+                "rootfs-image",
+            ]
+        elif version_is_minimum(bitbake_variables, "mender", "4.0.0"):
+            default_update_modules = [
+                "deb",
+                "directory",
+                "docker",
+                "rpm",
+                "script",
+                "single-file",
+                "rootfs-image",
+            ]
         else:
-            # After Mender client < v4.0 goes EOL, we can keep only this path.
-            default_update_modules.append("rootfs-image")
+            default_update_modules = [
+                "deb",
+                "directory",
+                "docker",
+                "rpm",
+                "script",
+                "single-file",
+                "rootfs-image-v2",
+            ]
 
         mender_vars = get_bitbake_variables(
             request, "mender-client", prepared_test_build
@@ -1134,7 +1178,7 @@ deployed-test-dir9/*;renamed-deployed-test-dir9/ \
     def test_extra_parts(
         self, request, latest_part_image, prepared_test_build, bitbake_image
     ):
-        """Test extra partitions setup with MENDER_EXTRA_PARTS and MENDER_EXTRA_PARTS_FSTAB."""
+        """Test extra partitions setup with MENDER_EXTRA_PARTS, MENDER_EXTRA_PARTS_FSTAB, and MENDER_EXTRA_PARTS_MOUNT_LOCATIONS."""
 
         sdimg = latest_part_image.endswith(".sdimg")
         uefiimg = latest_part_image.endswith(".uefiimg")
@@ -1163,12 +1207,14 @@ deployed-test-dir9/*;renamed-deployed-test-dir9/ \
                     % tmpdir2,
                     'MENDER_EXTRA_PARTS[test3] = "--fixed-size 50M --fstype=ext4 --source rootfs --rootfs-dir %s --label=test3"'
                     % tmpdir3,
-                    'MENDER_EXTRA_PARTS[test4] = "--fixed-size 50M --fstype=ext4 --source rootfs --rootfs-dir %s --label=test4"'
+                    'MENDER_EXTRA_PARTS[test4] = "--fixed-size 50M --fstype=ext4 --source rootfs --rootfs-dir %s"'
                     % tmpdir4,
                     'MENDER_EXTRA_PARTS_FSTAB[test1] = "auto nouser"',
-                    'MENDER_EXTRA_PARTS_FSTAB[test2] = "ext4 default,ro"',
-                    'MENDER_EXTRA_PARTS_FSTAB[test3] = "ext4 default,ro 1"',
-                    'MENDER_EXTRA_PARTS_FSTAB[test4] = "ext4 default,ro 1 0"',
+                    'MENDER_EXTRA_PARTS_FSTAB[test2] = "ext4 defaults,ro"',
+                    'MENDER_EXTRA_PARTS_FSTAB[test3] = "ext4 defaults,ro 1"',
+                    'MENDER_EXTRA_PARTS_FSTAB[test4] = "ext4 defaults,ro 1 0"',
+                    'MENDER_EXTRA_PARTS_MOUNT_LOCATIONS[test1] = "/opt/test1"',
+                    'MENDER_EXTRA_PARTS_MOUNT_LOCATIONS[test2] = "/opt/test2"',
                 ],
             )
 
@@ -1222,22 +1268,25 @@ deployed-test-dir9/*;renamed-deployed-test-dir9/ \
         ).decode()
 
         # Example:
-        # /dev/mmcblk0p5       /mnt/test1           auto       nouser                0  2
-        # /dev/mmcblk0p6       /mnt/test2           auto       default,ro            0  2
-        # /dev/mmcblk0p7       /mnt/test3           auto       default,ro            1  2
-        # /dev/mmcblk0p8       /mnt/test4           auto       default,ro            1  0
+        # /dev/mmcblk0p5       /opt/test1           auto       nouser                0  2
+        # /dev/mmcblk0p6       /opt/test2           auto       defaults,ro            0  2
+        # /dev/mmcblk0p7       /mnt/test3           auto       defaults,ro            1  2
+        # /dev/mmcblk0p8       /mnt/extra4          auto       defaults,ro            1  0
 
         test1_re = (
-            r"^/dev/[a-z0-9]+%d\s+/mnt/test1\s+auto\s+nouser\s+0\s+2\s*$" % extra_start
+            r"^/dev/[a-z0-9]+%d\s+/opt/test1\s+auto\s+nouser\s+0\s+2\s*$" % extra_start
         )
-        test2_re = r"^/dev/[a-z0-9]+%d\s+/mnt/test2\s+ext4\s+default,ro\s+0\s+2\s*$" % (
-            extra_start + 1
+        test2_re = (
+            r"^/dev/[a-z0-9]+%d\s+/opt/test2\s+ext4\s+defaults,ro\s+0\s+2\s*$"
+            % (extra_start + 1)
         )
-        test3_re = r"^/dev/[a-z0-9]+%d\s+/mnt/test3\s+ext4\s+default,ro\s+1\s+2\s*$" % (
-            extra_start + 2
+        test3_re = (
+            r"^/dev/[a-z0-9]+%d\s+/mnt/test3\s+ext4\s+defaults,ro\s+1\s+2\s*$"
+            % (extra_start + 2)
         )
-        test4_re = r"^/dev/[a-z0-9]+%d\s+/mnt/test4\s+ext4\s+default,ro\s+1\s+0\s*$" % (
-            extra_start + 3
+        test4_re = (
+            r"^/dev/[a-z0-9]+%d\s+/mnt/extra4\s+ext4\s+defaults,ro\s+1\s+0\s*$"
+            % (extra_start + 3)
         )
         assert re.search(test1_re, fstab, flags=re.MULTILINE) is not None
         assert re.search(test2_re, fstab, flags=re.MULTILINE) is not None

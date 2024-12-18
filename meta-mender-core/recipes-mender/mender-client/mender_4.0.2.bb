@@ -11,8 +11,8 @@ require mender_4.x.inc
 
 SRC_URI = "gitsm://github.com/mendersoftware/mender;protocol=https;branch=4.0.x"
 
-# Tag: 4.0.0
-SRCREV = "146951aa650064af0c28b1e42eb729bcd7aa9155"
+# Tag: 4.0.2
+SRCREV = "f8a235be22e08fbcba79f07d7b0e22f8bbf88845"
 
 # Enable this in Betas, and in branches that cannot carry this major version as
 # default.

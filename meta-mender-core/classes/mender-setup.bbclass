@@ -141,6 +141,16 @@ MENDER_BOOT_PART_SIZE_MB_DEFAULT = "16"
 #   FSTAB options of specified extra partition (optional)
 #   MENDER_EXTRA_PARTS_FSTAB[part1] = "..."
 #   MENDER_EXTRA_PARTS_FSTAB[part2] = "..."
+#
+#   FSTAB mount location of specified extra partition (optional)
+#     If not specified, the mount location of an extra partition `part` will be
+#     `/mnt/LABEL` where `LABEL` is specified by `--label LABEL` for the
+#     corresponding partition's fstab options, e.g.,
+#     `MENDER_EXTRA_PARTS_FSTAB[part]`. If `--label LABEL` has not been
+#     specified, the mount location will be `/mnt/extraK` where K is the extra
+#     partition index (1, ..., N).
+#   MENDER_EXTRA_PARTS_MOUNT_LOCATIONS[part1] = "/opt/part1"
+#   MENDER_EXTRA_PARTS_MOUNT_LOCATIONS[part2] = "/mnt/part2"
 
 # Extra partitions to create after the data parition
 MENDER_EXTRA_PARTS ??= ""
@@ -261,13 +271,13 @@ python() {
 addhandler mender_sanity_handler
 mender_sanity_handler[eventmask] = "bb.event.ParseCompleted"
 python mender_sanity_handler() {
-    if bb.utils.contains('MENDER_FEATURES_ENABLE', 'mender-partuuid', True, False, d) and d.getVar('MENDER_STORAGE_DEVICE', True) != "":
+    if bb.utils.contains('MENDER_FEATURES', 'mender-partuuid', True, False, d) and d.getVar('MENDER_STORAGE_DEVICE', True) != "":
         bb.warn("MENDER_STORAGE_DEVICE is ignored when mender-partuuid is enabled. Clear MENDER_STORAGE_DEVICE to remove this warning.")
 
-    if bb.utils.contains('MENDER_FEATURES_ENABLE', 'mender-partuuid', True, False, d) and bb.utils.contains('MENDER_FEATURES_ENABLE', 'mender-uboot', True, False, d):
+    if bb.utils.contains('MENDER_FEATURES', 'mender-partuuid', True, False, d) and bb.utils.contains('MENDER_FEATURES', 'mender-uboot', True, False, d):
         bb.fatal("mender-partuuid is not supported with mender-uboot.")
 
-    if bb.utils.contains('MENDER_FEATURES_ENABLE', 'mender-partuuid', True, False, d) and bb.utils.contains('MENDER_FEATURES_ENABLE', 'mender-partlabel', True, False, d):
+    if bb.utils.contains('MENDER_FEATURES', 'mender-partuuid', True, False, d) and bb.utils.contains('MENDER_FEATURES', 'mender-partlabel', True, False, d):
         bb.fatal("mender-partuuid is not supported with mender-partlabel.")
 }
 
